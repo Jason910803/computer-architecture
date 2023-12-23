@@ -104,7 +104,7 @@ module CHIP #(                                                                  
     reg [6:0] control_wire;   //for CONTROLL(opcode)
     reg [2:0] func3_wire;
     reg [6:0] func7_wire;
-    reg [31:0] instruction;   //instruction
+    reg [31:0] instruction, next_instruction;   //instruction
     reg [3:0] alu_wire;       //for ALU controll
     reg [31:0] imm;           //for IMM Gen
 
@@ -132,7 +132,7 @@ module CHIP #(                                                                  
 
     // TODO: any wire assignment
     assign o_IMEM_addr = PC;
-    assign o_IMEM_cen = imem_cen;
+    assign o_IMEM_cen = 1;
     assign o_DMEM_addr = mem_addr;
     assign o_DMEM_wdata = mem_wdata;
     assign o_DMEM_wen = mem_wen;
@@ -173,8 +173,8 @@ module CHIP #(                                                                  
 
     // initialization
     always @(*) begin
-        instruction = i_IMEM_data;
-        imem_cen = 0;
+        next_instruction = i_IMEM_data;
+        imem_cen = 1;
         next_PC = PC + 3'b100;
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
@@ -182,13 +182,12 @@ module CHIP #(                                                                  
         rd = instruction[11:7];
         rs1 = instruction[19:15];
         rs2 = instruction[24:20];
-        rd_data = 0;
         imm = 0;
         mem_addr = 0;
         mem_wdata = 0;
         mem_wen = 0;
         mem_cen = 0;   
-        RegWrite = 0;
+        RegWrite = 1;
         mul_valid = 0;
         mul_in_1 = rs1_data;
         mul_in_2 = rs2_data;
@@ -303,14 +302,15 @@ module CHIP #(                                                                  
                 rd_data = PC + 3'b100;
             end
             JALR: begin
-                RegWrite = 1;
                 imm[11:0] = instruction[31:20];
                 next_PC = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
+                RegWrite = 1;
                 rd_data = PC + 3'b100;
             end
             AUIPC: begin
-                RegWrite = 1'b1;
+                RegWrite = 1;
                 imm[31:12] = instruction[31:12];
+                imm[11:0]  = 0;
                 rd_data = PC + imm;
             end
             ECALL: begin
@@ -322,10 +322,12 @@ module CHIP #(                                                                  
     always @(posedge i_clk or negedge i_rst_n) begin
         if (!i_rst_n) begin
             PC <= 32'h00010000; // Do not modify this value!!!
+            instruction = i_IMEM_data;
             state_r <= S_IDLE;
         end
         else begin
             PC <= next_PC;
+            instruction <= next_instruction;
             state_r <= state_w; 
         end
     end
