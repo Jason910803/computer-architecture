@@ -97,7 +97,7 @@ module CHIP #(                                                                  
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
     
     // TODO: any declaration
-    reg [BIT_W-1:0] PC, next_PC;
+    reg [BIT_W-1:0] PC, next_PC, next_next_PC;
     reg mem_cen, mem_wen, imem_cen;
     reg [BIT_W-1:0] mem_addr, mem_wdata, mem_rdata;
 
@@ -175,7 +175,7 @@ module CHIP #(                                                                  
     always @(*) begin
         next_instruction = i_IMEM_data;
         imem_cen = 1;
-        next_PC = PC + 3'b100;
+        next_next_PC = PC + 3'b100;
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
         func7_wire = instruction[31:25];
@@ -269,16 +269,16 @@ module CHIP #(                                                                  
                 imem_cen = 1;
                 case(func3_wire)
                     BEQ_FUCN3: begin
-                        next_PC = (rs1_data == rs2_data)?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
+                        next_next_PC = (rs1_data == rs2_data)?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
                     end
                     BGE_FUNC3: begin
-                        next_PC = ($signed(rs1_data) >= $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
+                        next_next_PC = ($signed(rs1_data) >= $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
                     end
                     BNE_FUNC3: begin
-                        next_PC = ($signed(rs1_data) != $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
+                        next_next_PC = ($signed(rs1_data) != $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
                     end
                     BLT_FUNC3: begin
-                        next_PC = ($signed(rs1_data) < $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
+                        next_next_PC = ($signed(rs1_data) < $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
                     end
                 endcase
             end
@@ -298,12 +298,12 @@ module CHIP #(                                                                  
             JAL: begin
                 RegWrite = 1;
                 imm[20:0] = {instruction[31], instruction[19:12], instruction[20], instruction[30:21], 1'b0};
-                next_PC = $signed({1'b0, PC}) + $signed(imm[20:0]);
+                next_next_PC = $signed({1'b0, PC}) + $signed(imm[20:0]);
                 rd_data = PC + 3'b100;
             end
             JALR: begin
                 imm[11:0] = instruction[31:20];
-                next_PC = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
+                next_next_PC = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
                 RegWrite = 1;
                 rd_data = PC + 3'b100;
             end
@@ -327,6 +327,7 @@ module CHIP #(                                                                  
         end
         else begin
             PC <= next_PC;
+            next_PC <= next_next_PC;
             instruction <= next_instruction;
             state_r <= state_w; 
         end
