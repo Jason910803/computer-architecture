@@ -183,6 +183,7 @@ module CHIP #(                                                                  
         next_mem_wen_check = 0;
         next_mem_cen = 0;
         next_mem_wen = 0;
+        rd_data = 0;
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
         func7_wire = instruction[31:25];
@@ -232,6 +233,8 @@ module CHIP #(                                                                  
                         end
                     end
                     default : begin
+                        rd_data = 0;
+                        next_PC = PC +3'b100;
                     end
                 endcase
             end
@@ -265,6 +268,10 @@ module CHIP #(                                                                  
                             next_PC = PC + 3'b100;
                         end
                     end
+                    default : begin
+                        rd_data = 0;
+                        next_PC = PC +3'b100;
+                    end                    
                 endcase
             end
             LW: begin
@@ -331,6 +338,10 @@ module CHIP #(                                                                  
                     BLT_FUNC3: begin
                         next_PC = ($signed(rs1_data) < $signed(rs2_data))?($signed({1'b0, PC}) + $signed(imm[12:0])):(PC + 3'b100);
                     end
+                    default : begin
+                        rd_data = 0;
+                        next_PC = PC +3'b100;
+                    end
                 endcase
             end
             JAL: begin
@@ -360,8 +371,11 @@ module CHIP #(                                                                  
             end
             ECALL: begin
                 finish = 1;
+                next_PC = PC;
             end
             default : begin
+                rd_data = 0;
+                next_PC = PC +3'b100;
             end
         endcase
     end
