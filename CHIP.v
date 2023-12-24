@@ -173,10 +173,16 @@ module CHIP #(                                                                  
     // Todo: any combinational/sequential circuit
 
     // initialization
+    
     always @(*) begin
+        finish = 0;
         instruction = i_IMEM_data;
         //test = buffer == 2'b00 && next_buffer == 2'b10;
         imem_cen = 1;
+        next_mem_cen_check = 0;
+        next_mem_wen_check = 0;
+        next_mem_cen = 0;
+        next_mem_wen = 0;
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
         func7_wire = instruction[31:25];
@@ -274,6 +280,8 @@ module CHIP #(                                                                  
                         next_PC = PC + 3'b100;
                         next_mem_cen = 0;
                         next_mem_wen = 0;
+                        next_mem_cen_check = 0;
+                        next_mem_wen_check = 0;
                     end
                 end
                 else begin
@@ -291,14 +299,16 @@ module CHIP #(                                                                  
                         next_PC = PC;
                     end
                     else begin
-                        mem_wdata = rs2_data;
                         next_PC = PC + 3'b100;
                         next_mem_cen = 0;
                         next_mem_wen = 0;
+                        next_mem_cen_check = 0;
+                        next_mem_wen_check = 0;
                     end
-                end
+                end 
                 else begin
                     next_PC = PC;
+                    mem_wdata = rs2_data;
                 end
             end
             SB_type: begin
@@ -359,11 +369,7 @@ module CHIP #(                                                                  
             state_r <= S_IDLE;
             mem_cen <= 0;
             mem_wen <= 0;
-            next_mem_cen <= 0;
-            next_mem_wen <= 0;
             mem_cen_check <= 0;
-            next_mem_cen_check <= 0;
-            next_mem_wen_check <= 0;
             mem_wen_check <= 0;
         end
         else begin
