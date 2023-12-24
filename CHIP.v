@@ -114,7 +114,7 @@ module CHIP #(                                                                  
     wire [31:0] rs1_data;     //data of register1
     wire [31:0] rs2_data;     //data of register2
     reg [31:0] rd_data;       //data of rd register
-
+    reg [1:0] buffer, next_buffer;
     // for multipation
     reg mul_valid;
     wire mul_rdy;
@@ -126,13 +126,14 @@ module CHIP #(                                                                  
     reg RegWrite;
     integer i;
     reg finish;
+    reg test;
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Continuous Assignment
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // TODO: any wire assignment
     assign o_IMEM_addr = PC;
-    assign o_IMEM_cen = 1;
+    assign o_IMEM_cen = imem_cen;
     assign o_DMEM_addr = mem_addr;
     assign o_DMEM_wdata = mem_wdata;
     assign o_DMEM_wen = mem_wen;
@@ -174,8 +175,15 @@ module CHIP #(                                                                  
     // initialization
     always @(*) begin
         instruction = i_IMEM_data;
-        imem_cen = 1;
-        next_PC = PC + 3'b100;
+        //test = buffer == 2'b00 && next_buffer == 2'b10;
+        if (!i_DMEM_stall) begin
+            next_PC = PC + 3'b100;
+            imem_cen = 1;
+        end
+        else begin
+            next_PC = PC;
+            imem_cen = 0;
+        end
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
         func7_wire = instruction[31:25];
@@ -191,10 +199,6 @@ module CHIP #(                                                                  
         mul_valid = 0;
         mul_in_1 = rs1_data;
         mul_in_2 = rs2_data;
-    end
-
-    // Control (opcode)
-    always @(*) begin
         case(control_wire)
             R_type: begin  //for all opcode = 7'b0110011
                 RegWrite = 1;
@@ -254,11 +258,16 @@ module CHIP #(                                                                  
             LW: begin
                 mem_cen = 1;
                 mem_wen = 0;
+
                 RegWrite = 1;
                 mem_addr = $signed({1'b0, rs1_data}) + $signed(instruction[31:20]);
                 if(i_DMEM_stall == 0) begin
-                    imem_cen = 1;
-                    rd_data = i_DMEM_rdata;
+                    if (next_buffer == 1'd1) begin
+                        imem_cen = 1;
+                    end
+                    else begin
+                        rd_data = i_DMEM_rdata;
+                    end
                 end
                 else begin
                     imem_cen = 0;
@@ -327,9 +336,17 @@ module CHIP #(                                                                  
         end
         else begin
             PC <= next_PC;
-            state_r <= state_w; 
+            state_r <= state_w;
+            next_buffer <= buffer + 1; 
+            buffer <= 1;
         end
     end
+    always @(negedge i_DMEM_stall) begin
+        buffer <= 0;
+    end
+
+
+
     //FSM
     always @(*) begin
         state_w = state_r;
