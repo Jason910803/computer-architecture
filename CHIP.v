@@ -98,7 +98,7 @@ module CHIP #(                                                                  
     
     // TODO: any declaration
     reg [BIT_W-1:0] PC, next_PC;
-    reg mem_cen, mem_wen, imem_cen;
+    reg mem_cen, mem_wen, imem_cen, next_mem_cen, next_mem_wen, next_imem_cen, mem_cen_check, next_mem_cen_check, next_mem_wen_check, mem_wen_check;
     reg [BIT_W-1:0] mem_addr, mem_wdata, mem_rdata;
 
     reg [6:0] control_wire;   //for CONTROLL(opcode)
@@ -176,14 +176,7 @@ module CHIP #(                                                                  
     always @(*) begin
         instruction = i_IMEM_data;
         //test = buffer == 2'b00 && next_buffer == 2'b10;
-        if (!i_DMEM_stall) begin
-            next_PC = PC + 3'b100;
-            imem_cen = 1;
-        end
-        else begin
-            next_PC = PC;
-            imem_cen = 0;
-        end
+        imem_cen = 1;
         control_wire = instruction[6:0];
         func3_wire = instruction[14:12];
         func7_wire = instruction[31:25];
@@ -193,28 +186,32 @@ module CHIP #(                                                                  
         imm = 0;
         mem_addr = 0;
         mem_wdata = 0;
-        mem_wen = 0;
-        mem_cen = 0;   
         RegWrite = 1;
         mul_valid = 0;
         mul_in_1 = rs1_data;
         mul_in_2 = rs2_data;
         case(control_wire)
             R_type: begin  //for all opcode = 7'b0110011
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 RegWrite = 1;
                 imem_cen = 1;
                 case({func7_wire, func3_wire})
                     {ADD_FUNC7, ADD_FUNC3}: begin
                         rd_data = $signed(rs1_data) + $signed(rs2_data);
+                        next_PC = PC + 3'b100;
                     end
                     {SUB_FUNC7, SUB_FUNC3}: begin
                         rd_data = $signed(rs1_data) - $signed(rs2_data);
+                        next_PC = PC + 3'b100;
                     end
                     {AND_FUNC7, AND_FUNC3}: begin
                         rd_data = rs1_data & rs2_data;
+                        next_PC = PC + 3'b100;
                     end
                     {XOR_FUNC7, XOR_FUNC3}: begin
                         rd_data = rs1_data ^ rs2_data;
+                        next_PC = PC + 3'b100;
                     end
                     {MUL_FUNC7, MUL_FUNC3}: begin
                         mul_valid = 1;
@@ -231,49 +228,82 @@ module CHIP #(                                                                  
                 endcase
             end
             I_type: begin
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 RegWrite = 1;
                 imem_cen = 1;
                 case(func3_wire)
                     ADDI_FUNC3: begin
                         rd_data = $signed(rs1_data) + $signed(instruction[31:20]);
+                        next_PC = PC + 3'b100;
                     end
                     SLTI_FUNC3: begin
                         rd_data = ($signed(rs1_data) < $signed(instruction[31:20]))?1'b1:1'b0;
+                        next_PC = PC + 3'b100;
                     end
                     SLLI_FUNC3: begin
                         rd_data = rs1_data << instruction[31:20];
+                        next_PC = PC + 3'b100;
                     end
                     SRAI_FUNC3: begin
                         if(rs1_data[31] == {1'b1}) begin 
                             rd_data = rs1_data >> instruction[31:20];
                             for(i = 31; i >= 32-instruction[31:20] && i >=0; i = i - 1)
                                 rd_data[i] = 1;
+                            next_PC = PC + 3'b100;
                         end
                         else begin
                             rd_data = rs1_data >> instruction[31:20];
+                            next_PC = PC + 3'b100;
                         end
                     end
                 endcase
             end
             LW: begin
-                mem_cen = 1;
-                mem_wen = 0;
-
+                next_mem_cen_check = 1;
+                next_mem_cen = 1;
+                next_mem_wen = 0;
                 RegWrite = 1;
                 mem_addr = $signed({1'b0, rs1_data}) + $signed(instruction[31:20]);
                 if(i_DMEM_stall == 0) begin
-                    if (next_buffer == 1'd1) begin
-                        imem_cen = 1;
+                    if(mem_cen_check == 0) begin
+                        next_PC = PC;
                     end
                     else begin
                         rd_data = i_DMEM_rdata;
+                        next_PC = PC + 3'b100;
+                        next_mem_cen = 0;
+                        next_mem_wen = 0;
                     end
                 end
                 else begin
-                    imem_cen = 0;
+                    next_PC = PC;
+                end
+            end
+            SW: begin
+                next_mem_wen_check = 1;
+                next_mem_cen = 1;
+                next_mem_wen = 1;
+                imm[11:0] = {instruction[31:25], instruction[11:7]};
+                mem_addr = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
+                if(i_DMEM_stall == 0) begin
+                    if(mem_wen_check == 0) begin
+                        next_PC = PC;
+                    end
+                    else begin
+                        mem_wdata = rs2_data;
+                        next_PC = PC + 3'b100;
+                        next_mem_cen = 0;
+                        next_mem_wen = 0;
+                    end
+                end
+                else begin
+                    next_PC = PC;
                 end
             end
             SB_type: begin
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 imm[12:0] = {instruction[31], instruction[7], instruction[30:25], instruction[11:8], 1'b0};
                 imem_cen = 1;
                 case(func3_wire)
@@ -291,36 +321,30 @@ module CHIP #(                                                                  
                     end
                 endcase
             end
-            SW: begin
-                mem_cen = 1;
-                mem_wen = 1;
-                imm[11:0] = {instruction[31:25], instruction[11:7]};
-                mem_addr = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
-                if(i_DMEM_stall == 0) begin
-                    imem_cen = 1;
-                    mem_wdata = rs2_data;
-                end
-                else begin
-                    imem_cen = 0;
-                end
-            end
             JAL: begin
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 RegWrite = 1;
                 imm[20:0] = {instruction[31], instruction[19:12], instruction[20], instruction[30:21], 1'b0};
                 next_PC = $signed({1'b0, PC}) + $signed(imm[20:0]);
                 rd_data = PC + 3'b100;
             end
             JALR: begin
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 imm[11:0] = instruction[31:20];
                 next_PC = $signed({1'b0, rs1_data}) + $signed(imm[11:0]);
                 RegWrite = 1;
                 rd_data = PC + 3'b100;
             end
             AUIPC: begin
+                next_mem_cen_check = 0;
+                next_mem_wen_check = 0;
                 RegWrite = 1;
                 imm[31:12] = instruction[31:12];
                 imm[11:0]  = 0;
                 rd_data = PC + imm;
+                next_PC = PC + 3'b100;
             end
             ECALL: begin
                 finish = 1;
@@ -333,12 +357,28 @@ module CHIP #(                                                                  
             PC <= 32'h00010000; // Do not modify this value!!!
             instruction = i_IMEM_data;
             state_r <= S_IDLE;
+            mem_cen <= 0;
+            mem_wen <= 0;
+            next_mem_cen <= 0;
+            next_mem_wen <= 0;
+            mem_cen_check <= 0;
+            next_mem_cen_check <= 0;
+            next_mem_wen_check <= 0;
+            mem_wen_check <= 0;
         end
         else begin
             PC <= next_PC;
             state_r <= state_w;
-            next_buffer <= buffer + 1; 
-            buffer <= 1;
+            mem_cen_check <= next_mem_cen_check;
+            mem_wen_check <= next_mem_wen_check;
+            if (mem_cen_check == 1'b0 && mem_wen_check == 1'b0) begin
+                mem_cen <= next_mem_cen;
+                mem_wen <= next_mem_wen;
+            end
+            else begin
+                mem_cen <= 0;
+                mem_wen <= 0;
+            end
         end
     end
     always @(negedge i_DMEM_stall) begin
