@@ -231,6 +231,8 @@ module CHIP #(                                                                  
                             RegWrite = 0;
                         end
                     end
+                    default : begin
+                    end
                 endcase
             end
             I_type: begin
@@ -358,6 +360,8 @@ module CHIP #(                                                                  
             end
             ECALL: begin
                 finish = 1;
+            end
+            default : begin
             end
         endcase
     end
