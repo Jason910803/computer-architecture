@@ -89,8 +89,8 @@ module CHIP #(                                                                  
 
     // state
     localparam S_IDLE        = 0;
-    localparam S_EXEC        = 1;
-    localparam S_EXEC_MULDIV = 2;
+    localparam S_DO        = 1;
+    localparam S_DO_MUL = 2;
 
 // ------------------------------------------------------------------------------------------------------------------------------------------------------
 // Wires and Registers
@@ -121,7 +121,7 @@ module CHIP #(                                                                  
     reg [31:0] mul_in_1, mul_in_2;
     wire [31:0] mul_out; 
 
-    reg [1:0] state_w, state_r; //state
+    reg [1:0] next_state, state; //state
 
     reg RegWrite;
     integer i;
@@ -239,6 +239,7 @@ module CHIP #(                                                                  
                 endcase
             end
             I_type: begin
+                rs2 = 0;
                 next_mem_cen_check = 0;
                 next_mem_wen_check = 0;
                 RegWrite = 1;
@@ -257,16 +258,8 @@ module CHIP #(                                                                  
                         next_PC = PC + 3'b100;
                     end
                     SRAI_FUNC3: begin
-                        if(rs1_data[31] == {1'b1}) begin 
-                            rd_data = rs1_data >> instruction[31:20];
-                            for(i = 31; i >= 32-instruction[31:20] && i >=0; i = i - 1)
-                                rd_data[i] = 1;
+                            rd_data = rs1_data >>> instruction[24:20];
                             next_PC = PC + 3'b100;
-                        end
-                        else begin
-                            rd_data = rs1_data >> instruction[31:20];
-                            next_PC = PC + 3'b100;
-                        end
                     end
                     default : begin
                         rd_data = 0;
@@ -275,6 +268,7 @@ module CHIP #(                                                                  
                 endcase
             end
             LW: begin
+                rs2 = 0;
                 next_mem_cen_check = 1;
                 next_mem_cen = 1;
                 next_mem_wen = 0;
@@ -298,6 +292,7 @@ module CHIP #(                                                                  
                 end
             end
             SW: begin
+                rd = 0;
                 next_mem_wen_check = 1;
                 next_mem_cen = 1;
                 next_mem_wen = 1;
@@ -321,6 +316,7 @@ module CHIP #(                                                                  
                 end
             end
             SB_type: begin
+                rd = 0;
                 next_mem_cen_check = 0;
                 next_mem_wen_check = 0;
                 imm[12:0] = {instruction[31], instruction[7], instruction[30:25], instruction[11:8], 1'b0};
@@ -345,6 +341,8 @@ module CHIP #(                                                                  
                 endcase
             end
             JAL: begin
+                rs1 = 0;
+                rs2 = 0;
                 next_mem_cen_check = 0;
                 next_mem_wen_check = 0;
                 RegWrite = 1;
@@ -353,6 +351,7 @@ module CHIP #(                                                                  
                 rd_data = PC + 3'b100;
             end
             JALR: begin
+                rs2 = 0;
                 next_mem_cen_check = 0;
                 next_mem_wen_check = 0;
                 imm[11:0] = instruction[31:20];
@@ -361,6 +360,8 @@ module CHIP #(                                                                  
                 rd_data = PC + 3'b100;
             end
             AUIPC: begin
+                rs1 = 0;
+                rs2 = 0;
                 next_mem_cen_check = 0;
                 next_mem_wen_check = 0;
                 RegWrite = 1;
@@ -384,7 +385,7 @@ module CHIP #(                                                                  
         if (!i_rst_n) begin
             PC <= 32'h00010000; // Do not modify this value!!!
             instruction = i_IMEM_data;
-            state_r <= S_IDLE;
+            state <= S_IDLE;
             mem_cen <= 0;
             mem_wen <= 0;
             mem_cen_check <= 0;
@@ -392,7 +393,7 @@ module CHIP #(                                                                  
         end
         else begin
             PC <= next_PC;
-            state_r <= state_w;
+            state <= next_state;
             mem_cen_check <= next_mem_cen_check;
             mem_wen_check <= next_mem_wen_check;
             if (mem_cen_check == 1'b0 && mem_wen_check == 1'b0) begin
@@ -413,20 +414,16 @@ module CHIP #(                                                                  
 
     //FSM
     always @(*) begin
-        state_w = state_r;
-        case (state_r)
+        next_state = state;
+        case (state)
             S_IDLE: begin
-                state_w = (control_wire == 7'b0110011 && ({func7_wire, func3_wire} == {MUL_FUNC7, MUL_FUNC3})) ?
-                        S_EXEC_MULDIV :
-                        S_EXEC;
+                next_state = (control_wire == 7'b0110011 && ({func7_wire, func3_wire} == {MUL_FUNC7, MUL_FUNC3})) ? S_DO_MUL : S_DO;
             end
-            S_EXEC: begin
-                state_w = (control_wire == 7'b0110011 && ({func7_wire, func3_wire} == {MUL_FUNC7, MUL_FUNC3})) ?
-                        S_EXEC_MULDIV :
-                        S_EXEC;
+            S_DO: begin
+                next_state = (control_wire == 7'b0110011 && ({func7_wire, func3_wire} == {MUL_FUNC7, MUL_FUNC3})) ? S_DO_MUL : S_DO;
             end
-            S_EXEC_MULDIV: begin
-                state_w = (mul_rdy) ? S_EXEC : S_EXEC_MULDIV;
+            S_DO_MUL: begin
+                next_state = (mul_rdy) ? S_DO : S_DO_MUL;
             end 
         endcase   
     end
@@ -478,15 +475,12 @@ module Reg_file(i_clk, i_rst_n, wen, rs1, rs2, rd, wdata, rdata1, rdata2);
 endmodule
 
 module MULDIV_unit(clk, rst_n, valid, ready, in_A, in_B, out);
-    // Todo: your HW2
-    // Definition of ports
     input         clk, rst_n;
     input         valid;
     output        ready;
     input  [31:0] in_A, in_B;
     output [63:0] out;
 
-    // Definition of states
     localparam IDLE = 3'd0;
     localparam MUL  = 3'd1;
     localparam DIV  = 3'd2;
@@ -498,8 +492,8 @@ module MULDIV_unit(clk, rst_n, valid, ready, in_A, in_B, out);
     reg  [ 4:0] counter, counter_nxt;
     reg  [63:0] shreg, shreg_nxt;
     reg  [31:0] alu_in, alu_in_nxt;
-    reg  [32:0] alu_out;  // it's not a real register, it's wire!
-    reg         dividend_flag;  // it's not a real register, it's wire!
+    reg  [32:0] alu_out; 
+    reg         dividend_flag; 
     reg         rdy, rdy_nxt;
     wire [1:0] mode;
     assign mode = 0;
@@ -525,7 +519,6 @@ module MULDIV_unit(clk, rst_n, valid, ready, in_A, in_B, out);
             default : rdy_nxt = 0;
         endcase
     end
-    // Combinational always block // use "=" instead of "<=" in  always @(*) begin
     always @(*) begin
         case(state)
             IDLE: begin
